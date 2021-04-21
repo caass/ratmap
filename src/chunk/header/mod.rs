@@ -6,7 +6,8 @@ use deku::prelude::*;
 use message::MessageHeader;
 
 /// Each chunk consists of a header and data. The header itself has
-///  three parts: the basic header, the message header, and an optional extended timestamp.
+/// three parts: the basic header, the message header, and an optional extended timestamp.
+/// Chunk headers are between 1 and 18 bytes
 ///
 /// ````no_rust
 ///  +--------------+----------------+--------------------+--------------+

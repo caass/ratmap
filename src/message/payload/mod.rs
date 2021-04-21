@@ -28,6 +28,7 @@ pub enum MessageData {
     /// These protocol control messages MUST have message stream ID 0 (known
     /// as the control stream) and be sent in chunk stream ID 2. Protocol
     /// control messages take effect as soon as they are received; their
+    /// timestamps are ignored.
     #[deku(id_pat = "1 | 2 | 3 | 5 | 6")]
     ProtocolControl(#[deku(ctx = "message_type")] ProtocolControlMessage),
 

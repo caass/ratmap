@@ -2,6 +2,7 @@ mod header;
 mod payload;
 
 use deku::prelude::*;
+use futures::{Sink, Stream};
 
 pub use header::MessageHeader;
 pub use payload::MessageData;
