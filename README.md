@@ -1,6 +1,6 @@
 ![Banner](banner.png)
 
-Ratmap is a WIP pure Rust implementation of [Adobe's RTMP streaming protocol](https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf).
+Ratmap is a WIP pure Rust implementation of [Adobe's RTMP streaming protocol](https://rtmp.veriskope.com/docs/spec/).
 
 ## Roadmap
 

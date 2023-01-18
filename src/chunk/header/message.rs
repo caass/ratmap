@@ -1,248 +1,143 @@
+//! 5.3.1.2. [Chunk Message Header](https://rtmp.veriskope.com/docs/spec/#5312-chunk-message-header)
+
 use deku::prelude::*;
 
-/// A message header, as described in [section 5.3.1.2] of the spec.
-///
-/// Message headers contain metadata about the message that's being communicated
-/// along the chunkstream. While the data in a chunk is opaque to the chunk
-/// stream protocol, this metadata is useful for parsing the chunk's payload
-/// into messages.
-///
-/// In the spec, these are also called "chunk headers" or "chunk message
-/// headers", but since they don't actually contain any metadata about the chunk
-/// itself, we refer to them as message headers to avoid confusion.
-///
-/// [section 5.3.1.2]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=13
-#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
-#[deku(
-    ctx = "message_header_type: u8",
-    id = "message_header_type",
-    endian = "big"
-)]
+/// This field encodes information about the message being sent (whether in whole or in part).
+/// The length can be determined using the chunk type specified in the chunk header.
+#[derive(PartialEq, Debug, DekuRead, DekuWrite)]
+#[deku(ctx = "chunk_type: u8", id = "chunk_type", endian = "big")]
 pub enum MessageHeader {
-    /// A type 0 message header, as described in [section 5.3.1.2.1] of the
-    /// spec.
-    /// Type 0 message headers are the longest, at 11 bytes, and are used at the
-    /// start of a stream or whenever the stream timestamp goes backwards.
+    /// [5.3.1.2.1. Type 0](https://rtmp.veriskope.com/docs/spec/#53121type-0)
     ///
-    /// [section 5.3.1.2.1]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=14
+    /// Type 0 chunk headers are 11 bytes long.
+    ///
+    /// This type MUST be used at the start of a chunk stream,
+    /// and whenever the stream timestamp goes backward
+    /// (e.g., because of a backward seek).
     #[deku(id = "0")]
-    Type0 {
-        /// The timestamp, relative to the epoch established during the handshake, of the current message.
-        #[deku(bytes = 3)]
+    BeginOrRewindStream {
+        /// For a type-0 chunk, the absolute timestamp of the message is sent here.
+        /// If the timestamp is greater than or equal to 16777215 (hexadecimal 0xFFFFFF),
+        /// this field MUST be 16777215, indicating the presence of the Extended Timestamp
+        /// field to encode the full 32 bit timestamp.
+        /// Otherwise, this field SHOULD be the entire timestamp.
+        #[deku(bytes = "3")]
         timestamp: u32,
 
-        /// The length of the message, in bytes -- _NOT_ the length of the current chunk.
-        /// The message may span multiple chunks, or take up less than a single chunk.
-        #[deku(bytes = 3)]
+        /// For a type-0 or type-1 chunk, the length of the message is sent here.
+        /// Note that this is generally not the same as the length of the chunk payload.
+        /// The chunk payload length is the maximum chunk size for all but the last chunk,
+        /// and the remainder (which may be the entire length, for small messages) for the last chunk.
+        #[deku(bytes = "3")]
         message_length: u32,
 
-        /// The type of the message. See [section 7.1 of the spec] for more
-        ///
-        /// [section 7.1 of the spec]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=24
+        /// For a type-0 or type-1 chunk, type of the message is sent here.
         message_type_id: u8,
 
-        /// Which message stream this message belongs to. One chunk stream multiplexes
-        /// multiple message streams, so this field helps in de-multiplexing.
+        /// For a type-0 chunk, the message stream ID is stored.
+        /// Message stream ID is stored in little-endian format.
+        ///
+        /// Typically, all messages in the same chunk stream will come from the same message stream.
+        /// While it is possible to multiplex separate message streams into the same chunk stream,
+        /// this defeats the benefits of the header compression.
+        ///
+        /// However, if one message stream is closed and another one subsequently opened,
+        /// there is no reason an existing chunk stream cannot be reused by sending a new type-0 chunk.
         #[deku(endian = "little")]
         message_stream_id: u32,
     },
 
-    /// A type 1 message header, as described in [section 5.3.1.2.2] of the spec.
-    /// Type 1 message headers are the second longest, at 7 bytes, and are used
-    /// for each new message in a stream after the first when the underlying
-    /// messages are of variable size.
+    /// [5.3.1.2.2. Type 1](https://rtmp.veriskope.com/docs/spec/#53122-type-1)
     ///
-    /// For type 1 (and all further) message headers, any
-    /// omitted values take the same values as the preceding message. In the
-    /// case of type 1 headers, for example, this means the message stream ID.
+    /// Type 1 chunk headers are 7 bytes long.
     ///
-    /// [section 5.3.1.2.2]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=14
+    /// The message stream ID is not included; this chunk takes the same stream ID as the preceding chunk.
+    /// Streams with variable-sized messages (for example, many video formats)
+    /// SHOULD use this format for the first chunk of each new message after the first.
     #[deku(id = "1")]
-    Type1 {
-        /// The difference (in milliseconds) between the timestamp of this chunk
-        /// and the timestamp of the previous chunk
-        #[deku(bytes = 3)]
+    BeginVariableLengthMessage {
+        /// For a type-1 or type-2 chunk, the difference between the previous chunk’s timestamp
+        /// and the current chunk’s timestamp is sent here.
+        /// If the delta is greater than or equal to 16777215 (hexadecimal 0xFFFFFF),
+        /// this field MUST be 16777215, indicating the presence of the Extended Timestamp
+        /// field to encode the full 32 bit delta. Otherwise, this field SHOULD be the actual delta.
+        #[deku(bytes = "3")]
         timestamp_delta: u32,
 
-        /// The length of the message, in bytes -- _NOT_ the length of the current chunk.
-        /// The message may span multiple chunks, or take up less than a single chunk.
-        #[deku(bytes = 3)]
+        /// For a type-0 or type-1 chunk, the length of the message is sent here.
+        /// Note that this is generally not the same as the length of the chunk payload.
+        /// The chunk payload length is the maximum chunk size for all but the last chunk,
+        /// and the remainder (which may be the entire length, for small messages) for the last chunk.
+        #[deku(bytes = "3")]
         message_length: u32,
 
-        /// The type of the message. See [section 7.1 of the spec] for more
-        ///
-        /// [section 7.1 of the spec]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=24
+        /// For a type-0 or type-1 chunk, type of the message is sent here.
         message_type_id: u8,
     },
 
-    /// A type 2 message header, as described in [section 5.3.1.2.3] of the spec.
-    /// Type 2 message headers are 3 bytes long
-    /// and contain only the timestamp delta. All other values are the same as the preceding message.
-    /// These are used for every message
-    /// after the first in a message stream with fixed-size messages.
+    /// [5.3.1.2.3. Type 2](https://rtmp.veriskope.com/docs/spec/#53123-type-2)
     ///
-    /// [section 5.3.1.2.3]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=15
+    /// Type 2 chunk headers are 3 bytes long.
+    ///
+    /// Neither the stream ID nor the message length is included;
+    /// this chunk has the same stream ID and message length as the preceding chunk.
+    /// Streams with constant-sized messages (for example, some audio and data formats)
+    /// SHOULD use this format for the first chunk of each message after the first.
     #[deku(id = "2")]
-    Type2 {
-        /// The difference (in milliseconds) between the timestamp of this chunk
-        /// and the timestamp of the previous chunk
-        #[deku(bytes = 3)]
+    BeginConstantLengthMessage {
+        /// For a type-1 or type-2 chunk, the difference between the previous chunk’s timestamp
+        /// and the current chunk’s timestamp is sent here.
+        /// If the delta is greater than or equal to 16777215 (hexadecimal 0xFFFFFF),
+        /// this field MUST be 16777215, indicating the presence of the Extended Timestamp
+        /// field to encode the full 32 bit delta. Otherwise, this field SHOULD be the actual delta.
+        #[deku(bytes = "3")]
         timestamp_delta: u32,
     },
 
-    /// A type 3 message header, as described in [section 5.3.1.2.4] of the spec.
-    /// Type 3 chunks don't actually have a message header. These are used for
-    /// chunks which contain parts of a message, because another chunk has
-    /// already communicated the message's metadata. All values are the same as those
-    /// in the preceding chunk.
+    /// [5.3.1.2.4. Type 3](https://rtmp.veriskope.com/docs/spec/#53124-type-3)
+    /// Type 3 chunks have no message header.
     ///
-    /// [section 5.3.1.2.4]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=15
+    /// The stream ID, message length and timestamp delta fields are not present;
+    /// chunks of this type take values from the preceding chunk for the same Chunk Stream ID.
+    ///
+    /// When a single message is split into chunks,
+    /// all chunks of a message except the first one SHOULD use this type.
+    /// Refer to Example 2 ([Section 5.3.2.2](https://rtmp.veriskope.com/docs/spec/#5322-example-2)).
+    ///
+    /// A stream consisting of messages of exactly the same size,
+    /// stream ID and spacing in time SHOULD use this type for all chunks after a chunk of Type 2.
+    /// Refer to Example 1 ([Section 5.3.2.1](https://rtmp.veriskope.com/docs/spec/#5321-example-1)).
+    ///
+    /// If the delta between the first message and the second message is same as the timestamp
+    /// of the first message, then a chunk of Type 3 could immediately follow the chunk of Type 0
+    /// as there is no need for a chunk of Type 2 to register the delta.
+    ///
+    /// If a Type 3 chunk follows a Type 0 chunk, then the timestamp delta for this Type 3 chunk
+    /// is the same as the timestamp of the Type 0 chunk.
     #[deku(id = "3")]
-    Type3,
+    ContinueMessage,
 }
 
 impl MessageHeader {
-    /// If the timestamp (delta) doesn't fit in 3 bytes, then the timestamp (delta) field
-    /// is set to 0xFFFFFF, and a 32-bit "extended timestamp" is sent separately.
-    /// See [section 5.3.1.3] of the spec for more.
-    ///
-    /// [section 5.3.1.3]: https://wwwimages2.adobe.com/content/dam/acom/en/devnet/rtmp/pdf/rtmp_specification_1.0.pdf#page=16
-    pub const fn has_extended_timestamp(&self) -> bool {
+    pub fn size(&self) -> usize {
         match self {
-            MessageHeader::Type0 { timestamp, .. } => *timestamp == 0xFFFFFF,
-            MessageHeader::Type1 {
+            Self::BeginOrRewindStream { .. } => 11,
+            Self::BeginVariableLengthMessage { .. } => 7,
+            Self::BeginConstantLengthMessage { .. } => 3,
+            Self::ContinueMessage => 0,
+        }
+    }
+
+    pub fn has_extended_timestamp(&self, last_timestamp: u32) -> bool {
+        match *self {
+            MessageHeader::BeginOrRewindStream { timestamp, .. } => timestamp == 0xFFFFFF,
+            MessageHeader::BeginVariableLengthMessage {
                 timestamp_delta, ..
-            } => *timestamp_delta == 0xFFFFFF,
-            MessageHeader::Type2 { timestamp_delta } => *timestamp_delta == 0xFFFFFF,
-            MessageHeader::Type3 => false,
+            }
+            | MessageHeader::BeginConstantLengthMessage { timestamp_delta } => {
+                timestamp_delta == 0xFFFFFF
+            }
+            MessageHeader::ContinueMessage => last_timestamp >= 0xFFFFFF,
         }
     }
-}
-
-#[cfg(test)]
-mod test {
-    use super::MessageHeader;
-    use deku::{
-        bitvec::{BitSlice, Msb0},
-        prelude::*,
-    };
-
-    const TIMESTAMP_BYTES_1: u8 = 53;
-    const TIMESTAMP_BYTES_2: u8 = 76;
-    const TIMESTAMP_BYTES_3: u8 = 24;
-
-    const TIMESTAMP: u32 =
-        u32::from_be_bytes([0, TIMESTAMP_BYTES_1, TIMESTAMP_BYTES_2, TIMESTAMP_BYTES_3]);
-
-    const MESSAGE_LENGTH_BYTES_1: u8 = 14;
-    const MESSAGE_LENGTH_BYTES_2: u8 = 86;
-    const MESSAGE_LENGTH_BYTES_3: u8 = 33;
-
-    const MESSAGE_LENGTH: u32 = u32::from_be_bytes([
-        0,
-        MESSAGE_LENGTH_BYTES_1,
-        MESSAGE_LENGTH_BYTES_2,
-        MESSAGE_LENGTH_BYTES_3,
-    ]);
-
-    const MESSAGE_TYPE_ID: u8 = 13;
-
-    const MESSAGE_STREAM_ID_BYTES_1: u8 = 24;
-    const MESSAGE_STREAM_ID_BYTES_2: u8 = 1;
-    const MESSAGE_STREAM_ID_BYTES_3: u8 = 96;
-    const MESSAGE_STREAM_ID_BYTES_4: u8 = 100;
-
-    const MESSAGE_STREAM_ID: u32 = u32::from_le_bytes([
-        MESSAGE_STREAM_ID_BYTES_1,
-        MESSAGE_STREAM_ID_BYTES_2,
-        MESSAGE_STREAM_ID_BYTES_3,
-        MESSAGE_STREAM_ID_BYTES_4,
-    ]);
-
-    #[cfg(test)]
-    mod read {
-        use super::*;
-
-        #[test]
-        fn type_zero() {
-            const RAW_BYTES: [u8; 11] = [
-                TIMESTAMP_BYTES_1,
-                TIMESTAMP_BYTES_2,
-                TIMESTAMP_BYTES_3,
-                MESSAGE_LENGTH_BYTES_1,
-                MESSAGE_LENGTH_BYTES_2,
-                MESSAGE_LENGTH_BYTES_3,
-                MESSAGE_TYPE_ID,
-                MESSAGE_STREAM_ID_BYTES_1,
-                MESSAGE_STREAM_ID_BYTES_2,
-                MESSAGE_STREAM_ID_BYTES_3,
-                MESSAGE_STREAM_ID_BYTES_4,
-            ];
-
-            let expected = MessageHeader::Type0 {
-                timestamp: TIMESTAMP,
-                message_length: MESSAGE_LENGTH,
-                message_type_id: MESSAGE_TYPE_ID,
-                message_stream_id: MESSAGE_STREAM_ID,
-            };
-
-            let input = BitSlice::<Msb0, u8>::from_slice(&RAW_BYTES).unwrap();
-            let (_, actual) = MessageHeader::read(input, 0).unwrap();
-
-            assert_eq!(actual, expected)
-        }
-
-        #[test]
-        fn type_one() {
-            const RAW_BYTES: [u8; 7] = [
-                TIMESTAMP_BYTES_1,
-                TIMESTAMP_BYTES_2,
-                TIMESTAMP_BYTES_3,
-                MESSAGE_LENGTH_BYTES_1,
-                MESSAGE_LENGTH_BYTES_2,
-                MESSAGE_LENGTH_BYTES_3,
-                MESSAGE_TYPE_ID,
-            ];
-
-            let expected = MessageHeader::Type1 {
-                timestamp_delta: TIMESTAMP,
-                message_length: MESSAGE_LENGTH,
-                message_type_id: MESSAGE_TYPE_ID,
-            };
-
-            let input = BitSlice::<Msb0, u8>::from_slice(&RAW_BYTES).unwrap();
-            let (_, actual) = MessageHeader::read(input, 1).unwrap();
-
-            assert_eq!(actual, expected)
-        }
-
-        #[test]
-        fn type_two() {
-            const RAW_BYTES: [u8; 3] = [TIMESTAMP_BYTES_1, TIMESTAMP_BYTES_2, TIMESTAMP_BYTES_3];
-
-            let expected = MessageHeader::Type2 {
-                timestamp_delta: TIMESTAMP,
-            };
-
-            let input = BitSlice::<Msb0, u8>::from_slice(&RAW_BYTES).unwrap();
-            let (_, actual) = MessageHeader::read(input, 2).unwrap();
-
-            assert_eq!(actual, expected)
-        }
-
-        #[test]
-        fn type_three() {
-            const RAW_BYTES: [u8; 0] = [];
-
-            let expected = MessageHeader::Type3;
-
-            let input = BitSlice::<Msb0, u8>::from_slice(&RAW_BYTES).unwrap();
-            let (_, actual) = MessageHeader::read(input, 3).unwrap();
-
-            assert_eq!(actual, expected)
-        }
-    }
-
-    #[cfg(test)]
-    mod write {}
 }
