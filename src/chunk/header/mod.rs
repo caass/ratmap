@@ -1,4 +1,8 @@
-use deku::prelude::*;
+use deku::{
+    bitvec::{BitSlice, BitVec, Msb0},
+    ctx::Endian,
+    prelude::*,
+};
 use thiserror::Error;
 
 mod basic;
@@ -8,19 +12,53 @@ use super::ChunkStreamMap;
 use basic::{BasicHeader, ChunkStreamIdTryFromError};
 use message::MessageHeader;
 
-#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
-#[deku(ctx = "chunk_stream_map: ChunkStreamMap")]
+#[derive(Debug, PartialEq)]
 pub struct Header {
     basic_header: BasicHeader,
-    #[deku(ctx = "basic_header.chunk_type")]
     message_header: MessageHeader,
-    #[deku(cond = "message_header.has_extended_timestamp(
-            chunk_stream_map
-                .get(&123)
-                .map(|chunk_stream_information| chunk_stream_information.last_timestamp)
-                .unwrap_or_default()
-            )")]
     extended_timestamp: Option<u32>,
+}
+
+impl<'input, 'ctx> DekuRead<'input, &'ctx ChunkStreamMap> for Header {
+    fn read(
+        input: &'input BitSlice<u8, Msb0>,
+        ctx: &'ctx ChunkStreamMap,
+    ) -> Result<(&'input BitSlice<u8, Msb0>, Self), DekuError>
+    where
+        Self: Sized,
+    {
+        let (input, basic_header) = BasicHeader::read(input, ())?;
+        let (input, message_header) = MessageHeader::read(input, basic_header.chunk_type)?;
+
+        let last_timestamp = ctx
+            .get(&basic_header.chunk_stream_id())
+            .map(|info| info.last_timestamp)
+            .unwrap_or_default();
+
+        let (input, extended_timestamp) = if message_header.has_extended_timestamp(last_timestamp) {
+            u32::read(input, Endian::Big).map(|(input, ts)| (input, Some(ts)))?
+        } else {
+            (input, None)
+        };
+
+        Ok((
+            input,
+            Header {
+                basic_header,
+                message_header,
+                extended_timestamp,
+            },
+        ))
+    }
+}
+
+impl DekuWrite for Header {
+    fn write(&self, output: &mut BitVec<u8, Msb0>, ctx: ()) -> Result<(), DekuError> {
+        self.basic_header.write(output, ctx)?;
+        self.message_header
+            .write(output, self.basic_header.chunk_type)?;
+        self.extended_timestamp.write(output, Endian::Big)
+    }
 }
 
 impl Header {
@@ -42,7 +80,7 @@ impl Header {
     /// Get the timestamp of this chunk, given the previous timestamp.
     /// The returned timestamp will either be an absolute value (`Timestamp::Absolute(n)`)
     /// or a delta (`Timestamp::Delta(n)`) representing an increase of `n` milliseconds.
-    pub fn timestamp(&self, last_timestamp: u32) -> Timestamp {
+    pub(super) fn timestamp(&self, map: &ChunkStreamMap) -> Timestamp {
         match self.message_header {
             MessageHeader::BeginOrRewindStream { timestamp, .. } => Timestamp::Absolute(timestamp),
             MessageHeader::BeginVariableLengthMessage {
@@ -51,7 +89,11 @@ impl Header {
             | MessageHeader::BeginConstantLengthMessage { timestamp_delta } => {
                 Timestamp::Delta(timestamp_delta)
             }
-            MessageHeader::ContinueMessage => Timestamp::Delta(last_timestamp),
+            MessageHeader::ContinueMessage => Timestamp::Delta(
+                map.get(&self.basic_header.chunk_stream_id())
+                    .expect("Received a Type 3 message with no prior message in chunk stream.")
+                    .last_timestamp,
+            ),
         }
     }
 
