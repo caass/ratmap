@@ -3,12 +3,12 @@ use std::io;
 
 use dashmap::DashMap;
 use deku::bitvec::{BitSlice, Msb0};
+use deku::prelude::*;
 use rustc_hash::FxHasher;
 use tokio::io::{
     split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader, BufWriter, ReadHalf,
     WriteHalf,
 };
-use deku::prelude::*;
 
 use crate::clock::{Clock, SystemClock};
 
@@ -24,15 +24,19 @@ struct Chunk {
     data: Vec<u8>,
 }
 
-impl <'input, 'ctx> DekuRead<'input, &'ctx ChunkStreamMap> for Chunk {
+impl<'input, 'ctx> DekuRead<'input, &'ctx ChunkStreamMap> for Chunk {
     fn read(
         input: &'input BitSlice<u8, Msb0>,
         ctx: &'ctx ChunkStreamMap,
     ) -> Result<(&'input BitSlice<u8, Msb0>, Self), DekuError>
     where
-        Self: Sized {
+        Self: Sized,
+    {
         let (input, header) = Header::read(input, ctx)?;
-        let bytes_to_read = ctx.get(&header.chunk_stream_id()).map(|info| info.maximum_chunk_size.min(info.message_bytes_left_to_read))
+        let bytes_to_read = ctx
+            .get(&header.chunk_stream_id())
+            .map(|info| info.maximum_chunk_size.min(info.message_bytes_left_to_read));
+        todo!()
     }
 }
 
