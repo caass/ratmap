@@ -1,8 +1,4 @@
-use deku::{
-    bitvec::{BitSlice, BitVec, Msb0},
-    ctx::Endian,
-    prelude::*,
-};
+use deku::prelude::*;
 use thiserror::Error;
 
 mod basic;
@@ -20,7 +16,7 @@ pub struct Header {
     message_header: MessageHeader,
     #[deku(cond = "message_header.has_extended_timestamp(
             chunk_stream_map
-                .get(&123)
+                .get(&basic_header.chunk_stream_id())
                 .map(|chunk_stream_information| chunk_stream_information.last_timestamp)
                 .unwrap_or_default()
             )")]
@@ -46,7 +42,7 @@ impl Header {
     /// Get the timestamp of this chunk, given the previous timestamp.
     /// The returned timestamp will either be an absolute value (`Timestamp::Absolute(n)`)
     /// or a delta (`Timestamp::Delta(n)`) representing an increase of `n` milliseconds.
-    pub(super) fn timestamp(&self, map: &ChunkStreamMap) -> Timestamp {
+    pub(super) fn timestamp(&self, chunk_stream_map: &ChunkStreamMap) -> Timestamp {
         match self.message_header {
             MessageHeader::BeginOrRewindStream { timestamp, .. } => Timestamp::Absolute(timestamp),
             MessageHeader::BeginVariableLengthMessage {
@@ -56,7 +52,8 @@ impl Header {
                 Timestamp::Delta(timestamp_delta)
             }
             MessageHeader::ContinueMessage => Timestamp::Delta(
-                map.get(&self.basic_header.chunk_stream_id())
+                chunk_stream_map
+                    .get(&self.basic_header.chunk_stream_id())
                     .expect("Received a Type 3 message with no prior message in chunk stream.")
                     .last_timestamp,
             ),
