@@ -28,7 +28,6 @@
         };
 
         buildInputs = [pkgs.zstd pkgs.zlib pkgs.lz4];
-
         nativeBuildInputs = [pkgs.pkg-config];
       };
 
