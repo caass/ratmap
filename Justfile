@@ -7,11 +7,11 @@ dev:
 
 fmt:
     just --unstable --fmt
-    wuffsfmt -w ratmap-core/src/*.wuffs
+    wuffsfmt -w rtmp-wuffs/src/*.wuffs
 
 build: build-core
 
 
 build-core:
-    cat "$WUFFS_INCLUDE_PATH/wuffs-v0.4.c" > ./ratmap-core/build/wuffs-base.c
-    wuffs-c gen -genlinenum -package_name chunk_stream < ./ratmap-core/src/chunk-stream.wuffs > ./ratmap-core/build/chunk_stream.c
+    cat "$WUFFS_INCLUDE_PATH/wuffs-v0.4.c" > ./rtmp-wuffs/build/wuffs-base.c
+    wuffs-c gen -genlinenum -package_name chunk_stream < ./rtmp-wuffs/src/chunk-stream.wuffs > ./rtmp-wuffs/build/chunk_stream.c
