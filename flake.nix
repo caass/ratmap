@@ -38,6 +38,9 @@
 
       devShell = pkgs.mkShell {
         buildInputs = [packages.wuffs pkgs.just];
+        shellHook = ''
+          export WUFFS_INCLUDE_PATH=${packages.wuffs}/include
+        '';
       };
     });
 }
