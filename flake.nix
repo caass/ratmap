@@ -1,5 +1,5 @@
 {
-  description = "Flake to build Go binaries from a GitHub repo and provide a devshell.";
+  description = "Dev environment for Ratmap";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs";
@@ -14,7 +14,7 @@
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
     in rec {
-      packages.wuffs = pkgs.buildGoModule {
+      packages.wuffs = pkgs.buildGoModule rec {
         pname = "wuffs";
         version = "0.4.0-alpha.9";
 
@@ -29,6 +29,11 @@
 
         buildInputs = [pkgs.zstd pkgs.zlib pkgs.lz4];
         nativeBuildInputs = [pkgs.pkg-config];
+
+        postBuild = ''
+          mkdir -p $out/include
+          cp ${src}/release/c/* $out/include/
+        '';
       };
 
       devShell = pkgs.mkShell {
