@@ -1,3 +1,8 @@
+#
+# Patch `wuffs` to search in the source dir installed by nix, rather than
+# GOROOT or the local working directory.
+#
+
 diff --git a/lang/wuffsroot/wuffsroot.go b/lang/wuffsroot/wuffsroot.go
 index b48938fd..c97f9953 100644
 --- a/lang/wuffsroot/wuffsroot.go
