@@ -1,0 +1,43 @@
+diff --git a/lang/wuffsroot/wuffsroot.go b/lang/wuffsroot/wuffsroot.go
+index b48938fd..c97f9953 100644
+--- a/lang/wuffsroot/wuffsroot.go
++++ b/lang/wuffsroot/wuffsroot.go
+@@ -12,16 +12,15 @@ package wuffsroot
+
+ import (
+ 	"errors"
+-	"go/build"
+ 	"os"
+ 	"path/filepath"
+ 	"sync"
+ )
+
+-var initialWorkingDirectory = ""
++var wuffsPackageSrcDirectory = ""
+
+ func init() {
+-	initialWorkingDirectory, _ = os.Getwd()
++	wuffsPackageSrcDirectory, _ = os.LookupEnv("WUFFS_SRC_DIR")
+ }
+
+ var cache struct {
+@@ -48,17 +47,8 @@ func Value() (string, error) {
+
+ 	const wrdTxt = "wuffs-root-directory.txt"
+
+-	// Look for "w-r-d.txt" in the working directory or its ancestors.
+-	for p, q := initialWorkingDirectory, ""; p != q; p, q = filepath.Dir(p), p {
+-		if _, err := os.Stat(filepath.Join(p, wrdTxt)); err == nil {
+-			return setValue(p)
+-		}
+-	}
+-
+-	// Look for "github.com/google/wuffs/w-r-d.txt" in the Go source
+-	// directories.
+-	for _, p := range build.Default.SrcDirs() {
+-		p = filepath.Join(p, "github.com", "google", "wuffs")
++	// Look for "w-r-d.txt" in the directory indicated by $WUFFS_SRC_DIR
++	for p, q := wuffsPackageSrcDirectory, ""; p != q; p, q = filepath.Dir(p), p {
+ 		if _, err := os.Stat(filepath.Join(p, wrdTxt)); err == nil {
+ 			return setValue(p)
+ 		}

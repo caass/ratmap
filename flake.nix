@@ -13,8 +13,9 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
+      patchDir = ./patches;
     in rec {
-      packages.wuffs = pkgs.buildGoModule rec {
+      packages.wuffs = pkgs.buildGoModule {
         pname = "wuffs";
         version = "0.4.0-alpha.9";
 
@@ -30,16 +31,14 @@
         buildInputs = [pkgs.zstd pkgs.zlib pkgs.lz4];
         nativeBuildInputs = [pkgs.pkg-config];
 
-        postBuild = ''
-          mkdir -p $out/include
-          cp ${src}/release/c/* $out/include/
-        '';
+        patches = [(patchDir + "/0001-wuffs-root-dir.patch")];
       };
 
       devShell = pkgs.mkShell {
-        buildInputs = [packages.wuffs pkgs.just];
+        buildInputs = [packages.wuffs pkgs.just pkgs.clang];
         shellHook = ''
-          export WUFFS_INCLUDE_PATH=${packages.wuffs}/include
+          export WUFFS_INCLUDE_PATH=${packages.wuffs.src}/release/c
+          export WUFFS_SRC_DIR=${packages.wuffs.src}
         '';
       };
     });
