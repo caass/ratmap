@@ -13,7 +13,7 @@
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs {inherit system;};
-      patchDir = ./patches;
+      patch = patchName: ./patches + "/${patchName}";
     in rec {
       packages.wuffs = pkgs.buildGoModule {
         pname = "wuffs";
@@ -31,11 +31,35 @@
         buildInputs = [pkgs.zstd pkgs.zlib pkgs.lz4];
         nativeBuildInputs = [pkgs.pkg-config];
 
-        patches = [(patchDir + "/0001-wuffs-root-dir.patch")];
+        patches = [(patch "0001-wuffs-root-dir.patch")];
+      };
+
+      packages.makeHeaders = pkgs.stdenv.mkDerivation {
+        pname = "makeheaders";
+        version = "2.25";
+
+        src = pkgs.fetchfossil {
+          url = "https://fossil-scm.org/home";
+          rev = "version-2.25";
+          hash = "sha256-RL5U2IsU6uexInEjlP+9qF7EzuQkMfe8e1ehCjCG+Is=";
+        };
+
+        # ./configure will attempt to build the whole fossil project, we just want `makeheaders`
+        dontConfigure = true;
+        nativeBuildInputs = [pkgs.gcc];
+
+        buildPhase = ''
+          gcc ./tools/makeheaders.c -o makeheaders
+        '';
+
+        installPhase = ''
+          mkdir -p $out/bin
+          cp makeheaders $out/bin
+        '';
       };
 
       devShell = pkgs.mkShell {
-        buildInputs = [packages.wuffs pkgs.just pkgs.clang];
+        buildInputs = [packages.wuffs pkgs.just pkgs.clang packages.makeHeaders];
         shellHook = ''
           export WUFFS_INCLUDE_PATH=${packages.wuffs.src}/release/c
           export WUFFS_SRC_DIR=${packages.wuffs.src}
