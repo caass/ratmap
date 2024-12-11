@@ -1,0 +1,138 @@
+pub status "#invalid peer version"
+pub status "#invalid zero bytes"
+pub status "#incorrect epoch echo"
+pub status "#incorrect random bytes echo"
+
+pri struct random(
+        // an array of 1528 random bytes, read/written 8 bytes at a time.
+        // if there's a faster way to do this, let me know.
+        buf : array[191] base.u64,
+)
+
+pri func random.read?(src: base.io_reader) {
+    var i : base.u8[..= 191]
+    i = 0
+
+    while i < 191 {
+        this.buf[i] = args.src.read_u64be?()
+        i = i + 1
+    }
+
+    return ok
+}
+
+pri func random.write?(dst: base.io_writer) {
+    var i : base.u8[..= 191]
+    i = 0
+
+    while i < 191 {
+        args.dst.write_u64be?(a: this.buf[i])
+        i = i + 1
+    }
+
+    return ok
+}
+
+pri func random.eq(other: array[191] base.u64) base.bool {
+    var i : base.u8[..= 191]
+    i = 0
+
+    while i < 191 {
+        if this.buf[i] <> args.other[i] {
+            return false
+        }
+
+        i = i + 1
+    }
+
+    return true
+}
+
+pri struct hand(
+        epoch        : base.u32,
+        random_bytes : random,
+)
+
+pub struct handshake?(
+        self : hand,
+        peer : hand,
+)
+
+pri func handshake.send_0?(dst: base.io_writer) {
+    args.dst.write_u8?(a: 3)
+    return ok
+}
+
+pri func handshake.recv_0?(src: base.io_reader) {
+    var peer_version : base.u8
+    peer_version = args.src.read_u8?()
+    if peer_version <> 3 {
+        return "#invalid peer version"
+    }
+
+    return ok
+}
+
+pri func handshake.send_1?(dst: base.io_writer) {
+    args.dst.write_u32be?(a: this.self.epoch)
+    args.dst.write_u32be?(a: 0)
+    this.self.random_bytes.write?(dst: args.dst)
+
+    return ok
+}
+
+pri func handshake.recv_1?(src: base.io_reader) {
+    var zero : base.u32
+
+    this.peer.epoch = args.src.read_u32be?()
+    zero = args.src.read_u32be?()
+
+    if zero <> 0 {
+        return "#invalid zero bytes"
+    }
+
+    this.peer.random_bytes.read?(src: args.src)
+
+    return ok
+}
+
+pri func handshake.send_2?(dst: base.io_writer) {
+    args.dst.write_u32be?(a: this.peer.epoch)
+    args.dst.write_u32be?(a: this.self.epoch)
+    this.peer.random_bytes.write?(dst: args.dst)
+
+    return ok
+}
+
+pri func handshake.recv_2?(src: base.io_reader) {
+    var epoch_echo  : base.u32
+    var random_echo : random
+
+    epoch_echo = args.src.read_u32be?()
+    if epoch_echo <> this.self.epoch {
+        return "#incorrect epoch echo"
+    }
+
+    args.src.read_u32be?()
+
+    random_echo.read?(src: args.src)
+
+    if this.self.random_bytes.eq(other: random_echo.buf) {
+        return ok
+    }
+
+    return "#incorrect random bytes echo"
+}
+
+pub func handshake.shake?(src: base.io_reader, dst: base.io_writer) {
+    this.send_0?(dst: args.dst)
+    this.send_1?(dst: args.dst)
+
+    this.recv_0?(src: args.src)
+    this.recv_1?(src: args.src)
+
+    this.send_2?(dst: args.dst)
+    this.recv_2?(src: args.src)
+
+    return ok
+}
