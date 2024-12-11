@@ -1,0 +1,76 @@
+pub status "#invalid peer version"
+pub status "#invalid zero bytes"
+
+pub struct hand(
+        epoch  : base.u32,
+        random : array[1528] base.u8,
+)
+
+pri func hand.read_random?(src: base.io_reader) {
+    var i : base.u16[..= 1527]
+    i = 0
+
+    while true {
+        this.random[i] = args.src.read_u8?()
+        if i == 1527 {
+            return ok
+        }
+        i = i + 1
+    }
+}
+
+pri func hand.write_random?(dst: base.io_writer) {
+    var i : base.u16[..= 1527]
+    i = 0
+
+    while true {
+        args.dst.write_u8?(a: this.random[i])
+        if i == 1527 {
+            return ok
+        }
+        i = i + 1
+    }
+}
+
+pub struct handshake?(
+        self : hand,
+        peer : hand,
+)
+
+pub func handshake.send_0?(dst: base.io_writer) {
+    args.dst.write_u8?(a: 3)
+    return ok
+}
+
+pub func handshake.recv_0?(src: base.io_reader) {
+    var peer_version : base.u8
+    peer_version = args.src.read_u8?()
+    if peer_version <> 3 {
+        return "#invalid peer version"
+    }
+
+    return ok
+}
+
+pub func handshake.send_1?(dst: base.io_writer) {
+    args.dst.write_u32be?(a: this.self.epoch)
+    args.dst.write_u32be?(a: 0)
+    this.self.write_random?(dst: args.dst)
+
+    return ok
+}
+
+pub func handshake.recv_1?(src: base.io_reader) {
+    var zero : base.u32
+
+    this.peer.epoch = args.src.read_u32be?()
+    zero = args.src.read_u32be?()
+
+    if zero <> 0 {
+        return "#invalid zero bytes"
+    }
+
+    this.peer.read_random?(src: args.src)
+
+    return ok
+}
