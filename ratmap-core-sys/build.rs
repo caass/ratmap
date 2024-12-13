@@ -128,20 +128,6 @@ fn write_wuffs_base() {
     }
 }
 
-fn compile_wuffs() {
-    let files = fs::read_dir(WUFFS_C_DIR.as_path())
-        .unwrap()
-        .map(|result| result.unwrap().path());
-
-    let mut cfg = cc::Build::new();
-
-    cfg.define("WUFFS_IMPLEMENTATION", "1")
-        .include(WUFFS_C_DIR.as_path())
-        .files(files)
-        .out_dir(WUFFS_OUT_DIR.as_path())
-        .compile("libwuffs.a");
-}
-
 fn generate_bindings() {
     let cb = Box::new(bindgen::CargoCallbacks::new().rerun_on_header_files(false));
     let headers = fs::read_dir(WUFFS_C_DIR.as_path())
@@ -153,6 +139,14 @@ fn generate_bindings() {
     let bindings = bindgen::Builder::default()
         .headers(headers)
         .parse_callbacks(cb)
+        .use_core()
+        .allowlist_var(".*wuffs.*")
+        .allowlist_type(".*wuffs.*")
+        .allowlist_function(".*wuffs.*")
+        .allowlist_var(".*WUFFS.*")
+        .allowlist_type(".*WUFFS.*")
+        .allowlist_function(".*WUFFS.*")
+        .allowlist_recursively(true)
         .generate()
         .expect("to generate bindings");
 
@@ -170,6 +164,5 @@ fn main() {
     write_wuffs_base();
 
     // c -> rs
-    compile_wuffs();
     generate_bindings();
 }
