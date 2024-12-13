@@ -138,6 +138,10 @@ fn generate_bindings() {
 
     let bindings = bindgen::Builder::default()
         .headers(headers)
+        .clang_args([
+            "-DWUFFS_IMPLEMENTATION",
+            "-Wno-implicit-function-declaration",
+        ])
         .parse_callbacks(cb)
         .use_core()
         .allowlist_var(".*wuffs.*")

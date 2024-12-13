@@ -166,6 +166,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratmap-core"
+version = "0.1.0"
+dependencies = [
+ "ratmap-core-sys",
+]
+
+[[package]]
 name = "ratmap-core-sys"
 version = "0.1.0"
 dependencies = [
